@@ -144,7 +144,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .m-bar .cap { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink-2); }
 .m-figs { font-size: 13px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
 @media (max-width: 520px) {
-  .meters { grid-template-columns: minmax(0, 1fr) max-content; }
+  .meters { grid-template-columns: minmax(0, 1fr) max-content; grid-auto-flow: row dense; }
   .m-bar { grid-column: 1 / -1; margin-top: -6px; }
 }
 
@@ -303,8 +303,8 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       <div class="grid-form" style="margin-top:18px">
         <label>Currency
           <select id="currency">
-            <option value="USD">US dollar (USD)</option><option value="EUR">Euro (EUR)</option><option value="GBP">British pound (GBP)</option>
-            <option value="INR">Indian rupee (INR)</option><option value="CAD">Canadian dollar (CAD)</option><option value="AUD">Australian dollar (AUD)</option>
+            <option value="INR">Indian rupee (INR)</option><option value="USD">US dollar (USD)</option><option value="EUR">Euro (EUR)</option><option value="GBP">British pound (GBP)</option>
+           <option value="CAD">Canadian dollar (CAD)</option><option value="AUD">Australian dollar (AUD)</option>
             <option value="JPY">Japanese yen (JPY)</option><option value="SGD">Singapore dollar (SGD)</option><option value="AED">UAE dirham (AED)</option>
           </select>
         </label>
@@ -321,7 +321,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     <h2 id="dlgTitle">Add expense</h2>
     <div class="grid-form">
       <label class="full">Amount<input id="fAmount" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00" required></label>
-      <label>Where / what<input id="fVendor" type="text" maxlength="120" placeholder="e.g. Trader Joe's" autocomplete="off" required></label>
+      <label>Where / what<input id="fVendor" type="text" maxlength="120" placeholder="e.g. Swiggy" autocomplete="off" required></label>
       <label>Date<input id="fDate" type="date" required></label>
       <label class="full">Category
         <div class="row-inline">
@@ -349,7 +349,9 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
 (() => {
   const CATEGORIES = ['Groceries', 'Dining out', 'Transport', 'Housing', 'Utilities', 'Shopping', 'Health', 'Entertainment', 'Travel', 'Subscriptions', 'Education', 'Gifts', 'Other'];
   const METHODS = ['Card', 'Cash', 'Bank transfer', 'Mobile wallet', 'Other'];
-  const DEFAULT_BUDGETS = { 'Groceries': 450, 'Dining out': 200, 'Transport': 150, 'Housing': 1200, 'Utilities': 180, 'Shopping': 150, 'Health': 80, 'Entertainment': 100, 'Travel': 150, 'Subscriptions': 50, 'Education': 50, 'Gifts': 60, 'Other': 60 };
+  const DEFAULT_BUDGETS = { 'Groceries': 6000, 'Dining out': 3000, 'Transport': 2500, 'Housing': 15000, 'Utilities': 3000, 'Shopping': 3000, 'Health': 2000, 'Entertainment': 1500, 'Travel': 4000, 'Subscriptions': 1000, 'Education': 2000, 'Gifts': 1500, 'Other': 1000 };
+  // Limits the first version shipped with, in dollars; replaced by the rupee defaults above.
+  const OLD_USD_BUDGETS = { 'Groceries': 450, 'Dining out': 200, 'Transport': 150, 'Housing': 1200, 'Utilities': 180, 'Shopping': 150, 'Health': 80, 'Entertainment': 100, 'Travel': 150, 'Subscriptions': 50, 'Education': 50, 'Gifts': 60, 'Other': 60 };
   const KEYWORDS = {
     'Groceries': ['grocery', 'groceries', 'supermarket', 'market', 'trader joe', 'whole foods', 'aldi', 'lidl', 'kroger', 'safeway', 'costco', 'walmart', 'tesco', 'big basket', 'bigbasket', 'blinkit', 'zepto', 'instamart', 'dmart', 'vegetables', 'fruit', 'milk'],
     'Dining out': ['restaurant', 'cafe', 'café', 'coffee', 'starbucks', 'pizza', 'burger', 'mcdonald', 'kfc', 'subway', 'domino', 'swiggy', 'zomato', 'doordash', 'uber eats', 'grubhub', 'deliveroo', 'lunch', 'dinner', 'breakfast', 'bar', 'pub', 'bakery', 'chai'],
@@ -380,16 +382,20 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const todayISO = () => iso(new Date());
 
-  let currency = 'USD';
+  let currency = 'INR';
   const fmt = (n, compact) => {
-    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency, ...(compact ? { notation: 'compact', maximumFractionDigits: 1 } : {}) }).format(n || 0); }
+    // Rupees: Indian digit grouping, no paise on whole amounts, and no compact form (en-IN shortens thousands to "T").
+    const opts = currency === 'INR'
+      ? (compact || Number.isInteger(Math.round((n || 0) * 100) / 100) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : (compact ? { notation: 'compact', maximumFractionDigits: 1 } : {});
+    try { return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : undefined, { style: 'currency', currency, ...opts }).format(n || 0); }
     catch { return (n || 0).toFixed(2); }
   };
 
   // ---------- state ----------
   const state = {
     expenses: [],           // real, stored expenses
-    settings: { budgets: { ...DEFAULT_BUDGETS }, currency: 'USD' },
+    settings: { budgets: { ...DEFAULT_BUDGETS }, currency: 'INR' },
     month: monthOf(todayISO()),
     tab: 'overview',
     loaded: false,
@@ -403,15 +409,15 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     const out = []; let seed = 7;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     const plan = [
-      ['Groceries', ['Trader Joe\'s', 'Whole Foods', 'Farmers market'], 30, 95, 4],
-      ['Dining out', ['Blue Bottle Coffee', 'Sushi Ko', 'Pizza place'], 6, 48, 4],
-      ['Transport', ['Uber', 'Metro card top-up', 'Shell'], 12, 45, 3],
-      ['Housing', ['Rent'], 1150, 1150, 1],
-      ['Utilities', ['Electric bill', 'Internet'], 45, 70, 2],
-      ['Shopping', ['Amazon', 'Uniqlo'], 18, 70, 1],
-      ['Subscriptions', ['Netflix', 'Spotify'], 11, 16, 2],
-      ['Entertainment', ['Movie tickets', 'Concert'], 15, 60, 1],
-      ['Health', ['Pharmacy', 'Gym'], 20, 45, 1],
+      ['Groceries', ['BigBasket', 'DMart', 'Sabzi mandi'], 400, 2200, 4],
+      ['Dining out', ['Chaayos', 'Swiggy', 'Zomato'], 150, 900, 4],
+      ['Transport', ['Uber', 'Metro recharge', 'Petrol pump'], 100, 800, 3],
+      ['Housing', ['Rent'], 14000, 14000, 1],
+      ['Utilities', ['Electricity bill', 'Jio Fiber'], 700, 1800, 2],
+      ['Shopping', ['Amazon', 'Myntra'], 400, 2500, 1],
+      ['Subscriptions', ['Netflix', 'Spotify'], 119, 649, 2],
+      ['Entertainment', ['PVR movie', 'BookMyShow'], 300, 1200, 1],
+      ['Health', ['Apollo Pharmacy', 'Gym'], 300, 1500, 1],
     ];
     const now = new Date(), today = todayISO();
     for (let back = 23; back >= 0; back--) {
@@ -426,7 +432,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       }
     }
     const d = (n) => iso(new Date(now.getFullYear(), now.getMonth(), Math.max(1, now.getDate() - n)));
-    out.push({ id: 'ex-big', date: d(2), amount: 186.4, category: 'Dining out', vendor: 'Birthday dinner', method: 'Card', notes: 'Six people', example: true });
+    out.push({ id: 'ex-big', date: d(2), amount: 4200, category: 'Dining out', vendor: 'Birthday dinner', method: 'Card', notes: 'Six people', example: true });
     return out;
   }
   let examples = [];
@@ -761,7 +767,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     ev.preventDefault();
     const budgets = {};
     for (const i of $$('#budgetInputs input')) { const v = Math.max(0, Math.round(Number(i.value) || 0)); budgets[i.dataset.cat] = v; }
-    const next = { budgets, currency: $('#currency').value };
+    const next = { budgets, currency: $('#currency').value, inr: true };
     $('#saveBudgets').disabled = true;
     try { await saveSettings(next); $('#budgetStatus').textContent = 'Saved.'; setTimeout(() => { $('#budgetStatus').textContent = ''; }, 2500); }
     catch (e) { $('#budgetStatus').textContent = saveError(e); }
@@ -805,7 +811,17 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
   function useLocal() {
     state.mode = 'local';
     const saved = lsLoad();
-    if (saved) { state.expenses = (saved.expenses || []).map(clean); state.settings = { ...state.settings, ...saved.settings }; }
+    if (saved) {
+      state.expenses = (saved.expenses || []).map(clean);
+      state.settings = { ...state.settings, ...saved.settings };
+      // Settings saved before rupees became the default: switch to INR and swap untouched dollar limits.
+      if (!saved.settings?.inr && state.settings.currency === 'USD') {
+        const b = { ...state.settings.budgets };
+        for (const c of CATEGORIES) if (b[c] === undefined || Number(b[c]) === OLD_USD_BUDGETS[c]) b[c] = DEFAULT_BUDGETS[c];
+        state.settings = { budgets: b, currency: 'INR', inr: true };
+        lsSave();
+      }
+    }
     state.showExamples = !state.expenses.length;
     state.loaded = true; render();
   }
@@ -840,7 +856,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       ready();
     }, () => { useLocal(); });
     db.doc('config/settings').onSnapshot((snap) => {
-      if (snap.exists) { const d = snap.data(); state.settings = { budgets: { ...DEFAULT_BUDGETS, ...(d.budgets || {}) }, currency: d.currency || 'USD' }; }
+      if (snap.exists) { const d = snap.data(); state.settings = { budgets: { ...DEFAULT_BUDGETS, ...(d.budgets || {}) }, currency: d.currency || 'INR' }; }
       gotSettings = true; ready();
     }, () => { gotSettings = true; ready(); });
   }
