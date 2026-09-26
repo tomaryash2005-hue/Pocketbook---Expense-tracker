@@ -1,0 +1,19 @@
+{
+  "name": "expense-tracker",
+  "version": "1.0.0",
+  "description": "Expense tracking system with an AI categorization agent, budget dashboard, and scheduled spending automations.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node src/cli.js seed",
+    "job": "node src/cli.js run",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  }
+}

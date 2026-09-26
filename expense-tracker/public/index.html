@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Expense Tracker</div>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#submit" data-view="submit">Submit</a>
+      <a href="#ledger" data-view="ledger">Ledger</a>
+      <a href="#dashboard" data-view="dashboard">Dashboard</a>
+      <a href="#activity" data-view="activity">Notifications &amp; Reports</a>
+      <a href="#settings" data-view="settings">Settings</a>
+    </nav>
+    <span class="agent-badge" id="agentMode" title="Categorization agent mode"></span>
+  </header>
+
+  <main>
+    <!-- Submission form -->
+    <section id="view-submit" class="view" hidden>
+      <h1>Submit an expense</h1>
+      <form id="expenseForm" class="card form-grid" novalidate>
+        <label>Date<input type="date" name="date" required></label>
+        <label>Amount<input type="number" name="amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required></label>
+        <label>Vendor<input type="text" name="vendor" maxlength="120" placeholder="e.g. Delta Air Lines" required autocomplete="off"></label>
+        <label>Payment method<select name="paymentMethod" required></select></label>
+        <label class="span-2">Category
+          <div class="inline">
+            <select name="category"></select>
+            <button type="button" class="secondary" id="suggestBtn">Ask agent</button>
+          </div>
+          <small id="suggestion" class="hint" aria-live="polite">Leave on “Auto” and the agent will categorize it when you submit.</small>
+        </label>
+        <label>Approval status<select name="status"></select></label>
+        <label>Submitted by<input type="text" name="submittedBy" maxlength="120" placeholder="Your name"></label>
+        <label class="span-2">Receipt notes<textarea name="receiptNotes" rows="3" maxlength="2000" placeholder="What was it for? Attendees, receipt number, project…"></textarea></label>
+        <div class="span-2 actions">
+          <button type="submit">Submit expense</button>
+          <span id="formErrors" class="error" role="alert"></span>
+        </div>
+      </form>
+      <div id="submitResult" aria-live="polite"></div>
+    </section>
+
+    <!-- Ledger -->
+    <section id="view-ledger" class="view" hidden>
+      <div class="view-head">
+        <h1>Ledger</h1>
+        <div class="filters">
+          <label>Month<input type="month" id="ledgerMonth"></label>
+          <label>Status<select id="ledgerStatus"><option value="">All</option></select></label>
+          <label class="check"><input type="checkbox" id="ledgerFlagged"> Unusual only</label>
+        </div>
+      </div>
+      <div id="ledgerTotals" class="kpis"></div>
+      <div id="ledgerGroups"></div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view" hidden>
+      <div class="view-head">
+        <h1>Monthly budget dashboard</h1>
+        <div class="filters"><label>Month<input type="month" id="dashMonth"></label></div>
+      </div>
+      <div id="dashKpis" class="kpis"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Budget vs. spend by category</h2>
+          <div id="budgetBars" class="meters"></div>
+        </div>
+        <div class="card">
+          <h2>Agent insights</h2>
+          <ul id="observations" class="observations"></ul>
+          <h3>Unusual transactions <small class="muted">(&gt;150% of category average)</small></h3>
+          <div id="flaggedList"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chart-head">
+          <h2>Monthly spend — last 12 months vs. prior year</h2>
+          <div class="legend" id="trendLegend"></div>
+        </div>
+        <div id="trendChart" class="chart"></div>
+        <details><summary>Show as table</summary><div id="trendTable"></div></details>
+      </div>
+      <div class="card">
+        <h2>By payment method</h2>
+        <div id="paymentBars" class="meters"></div>
+      </div>
+    </section>
+
+    <!-- Notifications & reports -->
+    <section id="view-activity" class="view" hidden>
+      <h1>Notifications &amp; reports</h1>
+      <div class="card">
+        <h2>Run automations now</h2>
+        <p class="muted">These also run on schedule: weekly summary every Monday at 09:00, budget checks after every submission and hourly, and the month-end report on the 1st at 06:00.</p>
+        <div class="inline wrap">
+          <button data-job="weekly-summary" class="secondary">Send weekly summary</button>
+          <button data-job="budget-check" class="secondary">Check budgets</button>
+          <label class="inline">Report month <input type="month" id="reportMonth"></label>
+          <button data-job="monthly-report" class="secondary">Generate monthly report</button>
+        </div>
+        <p id="jobResult" class="hint" aria-live="polite"></p>
+      </div>
+      <div class="grid-2">
+        <div class="card"><h2>Notifications</h2><div id="notifications"></div></div>
+        <div class="card"><h2>Monthly reports</h2><ul id="reports" class="plain"></ul></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view" hidden>
+      <h1>Settings</h1>
+      <form id="settingsForm" class="grid-2">
+        <div class="card">
+          <h2>Monthly budget limits</h2>
+          <div id="budgetInputs" class="form-grid"></div>
+        </div>
+        <div class="card">
+          <h2>Managers to notify</h2>
+          <p class="muted">Receive budget alerts (80% and 100% of a limit), unusual-transaction alerts, and month-end reports.</p>
+          <div id="managerRows"></div>
+          <button type="button" class="secondary" id="addManager">Add manager</button>
+          <h2>Delivery</h2>
+          <label>Webhook URL (Slack, Teams, Zapier, email relay…)
+            <input type="url" name="webhookUrl" placeholder="https://hooks.slack.com/services/…">
+          </label>
+          <p class="muted">Notifications always appear in the app. With a webhook set they are also POSTed there as JSON.</p>
+        </div>
+        <div class="span-2 actions">
+          <button type="submit">Save settings</button>
+          <span id="settingsStatus" class="hint" aria-live="polite"></span>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
