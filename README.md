@@ -2,6 +2,8 @@
 
 Two expense trackers in one repository.
 
+**Use Pocketbook online:** https://tomaryash2005-hue.github.io/Pocketbook---Expense-tracker/
+
 | Folder | What it is | How to run it |
 |---|---|---|
 | [`pocketbook/`](pocketbook/) | A personal expense tracker for your phone or computer. It's a single web page with no build step and no server. | Open `pocketbook/index.html` in a browser, or host the folder anywhere (GitHub Pages works). |
