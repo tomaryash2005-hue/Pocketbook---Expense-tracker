@@ -13,6 +13,7 @@ Two expense trackers in one repository.
 
 - Log an expense with its amount, place, date, category, payment method and notes. If you leave the category on Auto, it's picked from places you've used before or from keywords.
 - Set a monthly budget for each category. Categories past 80% of their budget, and any spend over 150% of that category's average, are flagged.
+- See the month's spending by category in a donut chart. Your six biggest categories keep the same colour every month.
 - See how much you can spend per day for the rest of the month, this week compared with last week, and the last 12 months compared with the year before.
 - Each month has a report that compares every category with the previous month and the same month last year.
 - Export a month's expenses as CSV.
