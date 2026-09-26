@@ -814,8 +814,9 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     if (saved) {
       state.expenses = (saved.expenses || []).map(clean);
       state.settings = { ...state.settings, ...saved.settings };
-      // Settings saved before rupees became the default: switch to INR and swap untouched dollar limits.
-      if (!saved.settings?.inr && state.settings.currency === 'USD') {
+      // Settings saved before rupees became the default: switch to INR and swap the untouched
+      // dollar-sized starting limits for rupee ones. Limits the person changed are kept.
+      if (!saved.settings?.inr) {
         const b = { ...state.settings.budgets };
         for (const c of CATEGORIES) if (b[c] === undefined || Number(b[c]) === OLD_USD_BUDGETS[c]) b[c] = DEFAULT_BUDGETS[c];
         state.settings = { budgets: b, currency: 'INR', inr: true };
