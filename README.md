@@ -17,6 +17,9 @@ Two expense trackers in one repository.
 - Each month has a report that compares every category with the previous month and the same month last year.
 - Export a month's expenses as CSV.
 
-When you open `index.html` directly, expenses are saved in that browser's local storage, so they stay on that device and in that browser. The same page also runs as a Claude artifact. There, expenses sync to your Claude account, and an "Ask Claude" button can suggest a category.
+When you open `index.html` directly (or on GitHub Pages), expenses are saved in that browser's local storage.
+
+- **Sync across devices:** on the Sync tab, paste a GitHub token that has only the `gist` permission. Pocketbook keeps your data in a secret gist named `pocketbook-data.json` on your GitHub account. Paste the same token on each device and they share one copy of the data. Edits and deletions merge by time, so the newest change to an expense wins. The token stays in that browser.
+- **Backup file:** the Sync tab can also download everything as a JSON file and restore from one. Restoring merges with what's already there and never deletes anything. The same page also runs as a Claude artifact. There, expenses sync to your Claude account, and an "Ask Claude" button can suggest a category.
 
 Until you add your first expense, the page shows example data so the charts aren't empty. The examples are labelled and disappear as soon as you save a real expense.
