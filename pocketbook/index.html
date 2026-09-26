@@ -143,9 +143,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .m-bar .fill.over { background: var(--critical); }
 .m-bar .cap { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink-2); }
 .m-figs { font-size: 13px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+/* Phones keep the one-line layout: name, bar, figures. Text shrinks and the pill drops its label. */
 @media (max-width: 520px) {
-  .meters { grid-template-columns: minmax(0, 1fr) max-content; grid-auto-flow: row dense; }
-  .m-bar { grid-column: 1 / -1; margin-top: -6px; }
+  .panel { padding: 16px 14px; }
+  .meters { grid-template-columns: max-content minmax(24px, 1fr) max-content; gap: 12px 8px; }
+  .m-name { font-size: 13px; }
+  .m-figs { font-size: 11px; gap: 5px; }
+  .m-figs .pill { font-size: 11px; padding: 0 6px; }
+  .pill .long { display: none; }
+}
+/* Narrow phones: the figures show spend and limit; the pill keeps only its warning symbol. */
+@media (max-width: 400px) {
+  .m-name { font-size: 12.5px; }
+  .m-figs { font-size: 10.5px; }
+  .m-figs .pill.plain, .m-figs .pill .pct { display: none; }
+}
+@media (max-width: 350px) {
+  .meters { grid-template-columns: max-content minmax(12px, 1fr) max-content; }
 }
 
 /* week */
@@ -481,7 +495,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
   const tip = $('#tip');
   function showTip(html, x, y) { tip.innerHTML = html; tip.hidden = false; const r = tip.getBoundingClientRect(); tip.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, x + 14)) + 'px'; tip.style.top = Math.max(8, y + r.height + 24 > innerHeight ? y - r.height - 12 : y + 14) + 'px'; }
   const hideTip = () => { tip.hidden = true; };
-  const pillFor = (st, pct) => st === 'over' ? `<span class="pill over">▲ Over · ${pct}%</span>` : st === 'warning' ? `<span class="pill warning">⚠ ${pct}%</span>` : st === 'none' ? `<span class="pill">No limit</span>` : `<span class="pill">${pct}%</span>`;
+  const pillFor = (st, pct) => st === 'over' ? `<span class="pill over" title="Over budget, ${pct}% used">▲<span class="long"> Over ·</span><span class="pct"> ${pct}%</span></span>` : st === 'warning' ? `<span class="pill warning" title="${pct}% used">⚠<span class="pct"> ${pct}%</span></span>` : st === 'none' ? `<span class="pill plain">No limit</span>` : `<span class="pill plain">${pct}%</span>`;
 
   function render() {
     currency = state.settings.currency || 'USD';
@@ -557,7 +571,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       const stc = status(r.s, r.lim), sc = scaleOf(r), pct = r.lim ? Math.round((r.s / r.lim) * 100) : 0;
       return `<div class="m-row" data-i="${i}"><span class="m-name">${esc(r.c)}</span>
         <div class="m-bar"><div class="fill ${stc}" style="width:${(r.s / sc) * 100}%"></div>${r.lim ? `<div class="cap" style="left:calc(${(r.lim / sc) * 100}% - 1px)"></div>` : ''}</div>
-        <span class="m-figs"><span class="money">${fmt(r.s)}<span class="muted"> / ${fmt(r.lim, true)}</span></span>${pillFor(stc, pct)}</span></div>`;
+        <span class="m-figs"><span class="money">${fmt(r.s, true)}<span class="muted"> / ${fmt(r.lim, true)}</span></span>${pillFor(stc, pct)}</span></div>`;
     }).join('') || '<div class="muted">Set limits on the Budgets tab.</div>';
     $$('#meters .m-row').forEach((row) => {
       const r = rows[row.dataset.i];
