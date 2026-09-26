@@ -30,6 +30,7 @@
   --crit-bg: #fbe4e2;
   --crit-ink: #9e2420;
   --track: #e3e6e0;
+  --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #008300; --cat-rest: #9a9e98;
   --shadow: 0 10px 30px rgba(23, 32, 28, .14);
   --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -56,6 +57,7 @@
     --crit-bg: #3d1c1b;
     --crit-ink: #ffa3a0;
     --track: #2a312d;
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-rest: #6b716c;
     --shadow: 0 10px 30px rgba(0, 0, 0, .5);
   }
 }
@@ -65,6 +67,7 @@
   --line: #313934; --grid: #29302c; --accent: #6f9fe6; --accent-ink: #0d1420; --accent-soft: #1f2d42;
   --series-1: #3987e5; --series-2: #d95926; --warn-bg: #3a2e0c; --warn-ink: #ffd47a; --crit-bg: #3d1c1b; --crit-ink: #ffa3a0;
   --track: #2a312d; --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-rest: #6b716c;
 }
 
 * { box-sizing: border-box; }
@@ -234,6 +237,20 @@ textarea { resize: vertical; }
 .dot-state.on { background: var(--good); }
 .dot-state.busy { background: var(--warning); }
 .dot-state.err { background: var(--critical); }
+.pie-wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: center; }
+@media (max-width: 560px) { .pie-wrap { grid-template-columns: 1fr; justify-items: center; gap: 16px; } .pie-wrap .pie-legend { width: 100%; } }
+.pie svg { display: block; width: 220px; max-width: 100%; height: auto; overflow: visible; }
+.pie .slice { stroke: var(--surface); stroke-width: 2; cursor: pointer; transition: opacity .15s; }
+.pie .c-total { fill: var(--ink); font: 700 22px var(--display); }
+.pie .c-sub { fill: var(--ink-3); font: 12px var(--body); }
+.pie-legend { max-width: 520px; list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pie-legend li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 44px; gap: 10px; align-items: center; padding: 7px 6px; border-radius: 8px; cursor: pointer; }
+.pie-legend li:hover, .pie-legend li.on { background: var(--surface-2); }
+.pie-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+.pie-legend .nm { font-weight: 500; font-size: 14px; }
+.pie-legend .sub { display: block; font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.pie-legend .pc { text-align: right; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pie-dim .slice:not(.hi) { opacity: .3; }
 .budget-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
 
 dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(560px, calc(100% - 24px)); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
@@ -298,6 +315,11 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
         <h3 class="eyebrow" style="margin:16px 0 4px">Where it went</h3>
         <ul class="list" id="weekTop"></ul>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Where it went</h2><span class="muted" id="pieSub" style="font-size:13px"></span></div>
+      <div id="pie"></div>
     </div>
 
     <div class="panel">
@@ -620,6 +642,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     });
 
     renderWeek(list);
+    renderPie(list);
     renderTrend(list);
     renderReport(list);
   }
@@ -639,6 +662,64 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       <div class="fact"><div class="k">Same days last week</div><div class="v money">${fmt(p)} ${d === null ? '' : `<span style="font-size:13px" class="${d > 0 ? 'delta-up' : 'delta-down'}">${d > 0 ? '+' : ''}${d}%</span>`}</div></div>`;
     const top = Object.entries(byCategory(week)).sort((a, b) => b[1] - a[1]).slice(0, 5);
     $('#weekTop').innerHTML = top.map(([c, v]) => `<li><span>${esc(c)}</span><span class="money">${fmt(v)}</span></li>`).join('') || '<li class="muted">Nothing logged yet this week.</li>';
+  }
+
+  // Donut of this month's spending by category. The six categories with the most spending overall
+  // keep fixed colours (so a category looks the same every month); everything else folds into grey.
+  function renderPie(list) {
+    const el = $('#pie');
+    const month = inMonth(list, state.month), total = sum(month);
+    $('#pieSub').textContent = monthName(state.month);
+    if (!total) { el.innerHTML = '<div class="empty">No spending recorded this month.</div>'; return; }
+    const slot = new Map(Object.entries(byCategory(list)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c], i) => [c, i + 1]));
+    const cats = byCategory(month), main = [], rest = [];
+    for (const [c, v] of Object.entries(cats)) if (v > 0) (slot.has(c) ? main : rest).push({ c, v });
+    main.sort((a, b) => slot.get(a.c) - slot.get(b.c));
+    rest.sort((a, b) => b.v - a.v);
+    const slices = main.map((x) => ({ label: x.c, v: x.v, color: `var(--cat-${slot.get(x.c)})` }));
+    if (rest.length) slices.push({ label: rest.length === 1 ? rest[0].c : 'Everything else', v: round2(rest.reduce((s, x) => s + x.v, 0)), color: 'var(--cat-rest)', parts: rest.length > 1 ? rest : null });
+    const pct = (v) => Math.round((v / total) * 1000) / 10;
+
+    const R = 100, r = 64, C = 110;
+    const pt = (rad, a) => [C + rad * Math.sin(a), C - rad * Math.cos(a)];
+    let a0 = 0;
+    const paths = slices.map((s, i) => {
+      const a1 = a0 + (s.v / total) * Math.PI * 2; let d;
+      if (slices.length === 1) {
+        d = `M${C},${C - R}A${R},${R} 0 1 1 ${C - 0.01},${C - R}Z M${C},${C - r}A${r},${r} 0 1 0 ${C + 0.01},${C - r}Z`;
+      } else {
+        const big = a1 - a0 > Math.PI ? 1 : 0;
+        const [x0, y0] = pt(R, a0), [x1, y1] = pt(R, a1), [x2, y2] = pt(r, a1), [x3, y3] = pt(r, a0);
+        d = `M${x0},${y0}A${R},${R} 0 ${big} 1 ${x1},${y1}L${x2},${y2}A${r},${r} 0 ${big} 0 ${x3},${y3}Z`;
+      }
+      a0 = a1;
+      return `<path class="slice" data-i="${i}" d="${d}" fill="${s.color}" fill-rule="evenodd"/>`;
+    }).join('');
+    el.innerHTML = `<div class="pie-wrap">
+      <div class="pie"><svg viewBox="0 0 220 220" role="img" aria-label="Spending by category in ${monthName(state.month)}: ${slices.map((s) => `${s.label} ${pct(s.v)}%`).join(', ')}">
+        ${paths}
+        <text class="c-total" x="${C}" y="${C + 4}" text-anchor="middle">${esc(fmt(total, true))}</text>
+        <text class="c-sub" x="${C}" y="${C + 24}" text-anchor="middle">spent</text>
+      </svg></div>
+      <ul class="pie-legend">${slices.map((s, i) => ({ s, i })).sort((a, b) => b.s.v - a.s.v).map(({ s, i }) => `<li data-i="${i}"><span class="sw" style="background:${s.color}"></span>
+        <span class="nm">${esc(s.label)}${s.parts ? `<span class="sub">${esc(s.parts.map((x) => x.c).join(', '))}</span>` : ''}</span>
+        <span class="money" style="font-size:13px">${fmt(s.v)}</span><span class="pc">${pct(s.v)}%</span></li>`).join('')}</ul>
+    </div>`;
+
+    const svg = $('svg', el), wrap = $('.pie', el);
+    const tipFor = (s) => `<b>${esc(s.label)}</b><div class="row"><span>Spent</span><span>${fmt(s.v)}</span></div><div class="row"><span>Share</span><span>${pct(s.v)}%</span></div>` +
+      (s.parts ? s.parts.map((x) => `<div class="row"><span>${esc(x.c)}</span><span>${fmt(x.v)}</span></div>`).join('') : '');
+    const highlight = (i) => {
+      wrap.classList.toggle('pie-dim', i !== null);
+      $$('.slice', svg).forEach((p) => p.classList.toggle('hi', Number(p.dataset.i) === i));
+      $$('.pie-legend li', el).forEach((li) => li.classList.toggle('on', Number(li.dataset.i) === i));
+    };
+    for (const node of [...$$('.slice', svg), ...$$('.pie-legend li', el)]) {
+      const i = Number(node.dataset.i);
+      node.addEventListener('mousemove', (e) => { highlight(i); showTip(tipFor(slices[i]), e.clientX, e.clientY); });
+      node.addEventListener('mouseleave', () => { highlight(null); hideTip(); });
+      node.addEventListener('click', (e) => { highlight(i); showTip(tipFor(slices[i]), e.clientX, e.clientY); clearTimeout(renderPie.t); renderPie.t = setTimeout(() => { highlight(null); hideTip(); }, 2500); });
+    }
   }
 
   function renderTrend(list) {
