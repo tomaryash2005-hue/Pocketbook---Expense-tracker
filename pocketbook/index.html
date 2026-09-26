@@ -89,6 +89,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .month-step .label { font-family: var(--display); font-weight: 600; min-width: 128px; text-align: center; }
 .icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; display: grid; place-items: center; color: var(--ink-2); }
 .icon-btn:hover { border-color: var(--ink-3); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+.theme-btn { margin-left: 6px; width: auto; padding: 0 10px; gap: 6px; display: inline-flex; align-items: center; font-size: 13px; font-weight: 600; }
+.theme-btn svg { width: 16px; height: 16px; flex: none; }
 .tabs { display: flex; gap: 2px; width: 100%; overflow-x: auto; scrollbar-width: none; }
 .tabs a { text-decoration: none; color: var(--ink-2); padding: 6px 12px; border-radius: 999px; font-weight: 500; white-space: nowrap; }
 .tabs a[aria-current="page"] { background: var(--ink); color: var(--paper); }
@@ -240,6 +243,9 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
 .dlg-actions .spacer { flex: 1; }
 @media (prefers-reduced-motion: no-preference) { .fill { transition: width .4s ease; } }
 </style>
+<script>
+  try { const t = localStorage.getItem('pocketbook-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch {}
+</script>
 </head>
 <body>
 
@@ -250,6 +256,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       <button class="icon-btn" id="prevMonth" aria-label="Previous month">&#8249;</button>
       <span class="label" id="monthLabel"></span>
       <button class="icon-btn" id="nextMonth" aria-label="Next month">&#8250;</button>
+      <button class="icon-btn theme-btn" id="themeBtn" type="button"></button>
     </div>
     <nav class="tabs" aria-label="Sections">
       <a href="#overview" data-tab="overview">Overview</a>
@@ -1086,6 +1093,31 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       gotSettings = true; ready();
     }, () => { gotSettings = true; ready(); });
   }
+
+  // ---------- theme ----------
+  // 'auto' follows the phone's setting; 'light' and 'dark' are fixed. Stored per device.
+  const THEME_KEY = 'pocketbook-theme';
+  const THEMES = {
+    auto: { next: 'light', label: 'Auto', says: 'Theme follows your device. Tap for light.', icon: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>' },
+    light: { next: 'dark', label: 'Light', says: 'Light theme. Tap for dark.', icon: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="currentColor"/><g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.05 3.05l1.13 1.13M11.82 11.82l1.13 1.13M3.05 12.95l1.13-1.13M11.82 4.18l1.13-1.13"/></g></svg>' },
+    dark: { next: 'auto', label: 'Dark', says: 'Dark theme. Tap to follow your device.', icon: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7z" fill="currentColor"/></svg>' },
+  };
+  let theme = (() => { try { const t = localStorage.getItem(THEME_KEY); return THEMES[t] ? t : 'auto'; } catch { return 'auto'; } })();
+  function applyTheme() {
+    if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', theme);
+    const t = THEMES[theme], btn = $('#themeBtn');
+    btn.innerHTML = `${t.icon}<span>${t.label}</span>`;
+    btn.title = t.says; btn.setAttribute('aria-label', t.says);
+    // Charts read colours from CSS, so redraw them in the new palette.
+    if (state.loaded && state.tab === 'overview') renderTrend(all());
+  }
+  $('#themeBtn').addEventListener('click', () => {
+    theme = THEMES[theme].next;
+    try { if (theme === 'auto') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, theme); } catch {}
+    applyTheme();
+  });
+  applyTheme();
 
   // ---------- nav ----------
   $('#prevMonth').addEventListener('click', () => { state.month = shiftMonth(state.month, -1); render(); });
