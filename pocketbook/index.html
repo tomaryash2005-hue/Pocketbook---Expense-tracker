@@ -101,6 +101,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .notice { margin-top: 16px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
 .notice .spacer { flex: 1; }
+.notice a { font-weight: 600; }
 
 .view { display: grid; gap: 16px; margin-top: 20px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
@@ -221,6 +222,15 @@ textarea { resize: vertical; }
 .hint { font-size: 12px; font-weight: 400; color: var(--ink-3); min-height: 1.5em; }
 .error { color: var(--crit-ink); font-size: 13px; }
 .amount-input { font-family: var(--mono); font-size: 22px; }
+.sync-body { display: grid; gap: 12px; max-width: 62ch; }
+.sync-body p { margin: 0; }
+.sync-body ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.sync-body a { color: var(--accent); }
+.sync-state { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.dot-state { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.dot-state.on { background: var(--good); }
+.dot-state.busy { background: var(--warning); }
+.dot-state.err { background: var(--critical); }
 .budget-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
 
 dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(560px, calc(100% - 24px)); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
@@ -245,6 +255,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
       <a href="#overview" data-tab="overview">Overview</a>
       <a href="#ledger" data-tab="ledger">Ledger</a>
       <a href="#budgets" data-tab="budgets">Budgets</a>
+      <a href="#sync" data-tab="sync">Sync</a>
     </nav>
   </div>
 </header>
@@ -306,6 +317,26 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
         </div>
       </div>
       <div id="ledger"></div>
+    </div>
+  </section>
+
+  <!-- SYNC -->
+  <section id="tab-sync" class="view" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Sync across devices</h2><span id="syncBadge"></span></div>
+      <div id="syncBody" class="sync-body"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Backup file</h2></div>
+      <div class="sync-body">
+        <p class="muted">Save all your expenses and limits to a file, or restore from one. Restoring adds to what's here and keeps the newer copy of any expense that's in both. It never deletes anything.</p>
+        <div class="dlg-actions">
+          <button class="btn quiet" type="button" id="backupBtn">Download backup</button>
+          <button class="btn quiet" type="button" id="restoreBtn">Restore from backup</button>
+          <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint" id="backupStatus" aria-live="polite"></p>
+      </div>
     </div>
   </section>
 
@@ -415,6 +446,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     loaded: false,
     showExamples: false,
     mode: 'loading',        // 'db' | 'local' | 'loading'
+    deleted: {},            // id -> deletedAt, so a deletion on one device reaches the others
   };
   let db = null, sample = null, downloads = null;
 
@@ -509,12 +541,13 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     if (state.tab === 'overview') renderOverview();
     if (state.tab === 'ledger') renderLedger();
     if (state.tab === 'budgets') renderBudgets();
+    if (state.tab === 'sync') renderSync();
   }
 
   function renderNotice() {
     const n = $('#notice');
     const parts = [];
-    if (state.mode === 'local') parts.push('<span>Saving in this browser only. Your expenses won\'t appear on other devices.</span>');
+    if (state.mode === 'local' && !syncCfg) parts.push('<span>Saving in this browser only. <a href="#sync" style="color:var(--accent)">Turn on sync</a> to see your expenses on other devices.</span>');
     if (state.showExamples) parts.push('<span><b>These are example expenses.</b> Add your first expense and they\'ll be replaced by your own.</span><span class="spacer"></span><button class="btn quiet" id="hideEx">Start with an empty book</button>');
     n.hidden = !parts.length;
     n.innerHTML = parts.join('');
@@ -781,7 +814,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     ev.preventDefault();
     const budgets = {};
     for (const i of $$('#budgetInputs input')) { const v = Math.max(0, Math.round(Number(i.value) || 0)); budgets[i.dataset.cat] = v; }
-    const next = { budgets, currency: $('#currency').value, inr: true };
+    const next = { budgets, currency: $('#currency').value, inr: true, updatedAt: new Date().toISOString() };
     $('#saveBudgets').disabled = true;
     try { await saveSettings(next); $('#budgetStatus').textContent = 'Saved.'; setTimeout(() => { $('#budgetStatus').textContent = ''; }, 2500); }
     catch (e) { $('#budgetStatus').textContent = saveError(e); }
@@ -800,24 +833,25 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
   // ---------- storage ----------
   const LS_KEY = 'pocketbook-v1';
   function lsLoad() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || null; } catch { return null; } }
-  function lsSave() { try { localStorage.setItem(LS_KEY, JSON.stringify({ expenses: state.expenses, settings: state.settings })); } catch {} }
+  function lsSave() { try { localStorage.setItem(LS_KEY, JSON.stringify({ expenses: state.expenses, settings: state.settings, deleted: state.deleted })); } catch {} }
 
   async function saveExpense(exp) {
     if (state.mode === 'db') { await db.collection('expenses').doc(exp.id).set(exp); }
     const i = state.expenses.findIndex((e) => e.id === exp.id);
     if (i >= 0) state.expenses[i] = exp; else state.expenses.push(exp);
-    if (state.mode === 'local') lsSave();
+    if (state.mode === 'local') { lsSave(); scheduleSync(); }
   }
   async function removeExpense(id) {
     if (state.mode === 'db') await db.collection('expenses').doc(id).delete();
     state.expenses = state.expenses.filter((e) => e.id !== id);
-    if (state.mode === 'local') lsSave();
+    state.deleted[id] = new Date().toISOString();
+    if (state.mode === 'local') { lsSave(); scheduleSync(); }
     render();
   }
   async function saveSettings(s) {
     if (state.mode === 'db') await db.doc('config/settings').set(s);
     state.settings = s;
-    if (state.mode === 'local') lsSave();
+    if (state.mode === 'local') { lsSave(); scheduleSync(); }
     render();
   }
   const clean = (d) => ({ ...d, amount: Number(d.amount) || 0, notes: d.notes || '', method: d.method || 'Other', category: CATEGORIES.includes(d.category) ? d.category : 'Other' });
@@ -827,6 +861,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
     const saved = lsLoad();
     if (saved) {
       state.expenses = (saved.expenses || []).map(clean);
+      state.deleted = saved.deleted || {};
       state.settings = { ...state.settings, ...saved.settings };
       // Settings saved before rupees became the default: switch to INR and swap the untouched
       // dollar-sized starting limits for rupee ones. Limits the person changed are kept.
@@ -836,21 +871,197 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
         state.settings = { budgets: b, currency: 'INR', inr: true };
         lsSave();
       }
+      // Limits someone changed before sync existed get an early timestamp, so they beat a new device's
+      // untouched defaults (which have none) but lose to any later edit.
+      if (!state.settings.updatedAt) {
+        const custom = state.settings.currency !== 'INR' || CATEGORIES.some((c) => Number(state.settings.budgets?.[c]) !== DEFAULT_BUDGETS[c]);
+        if (custom) { state.settings.updatedAt = '2000-01-01T00:00:00.000Z'; lsSave(); }
+      }
     }
     state.showExamples = !state.expenses.length;
     state.loaded = true; render();
+    runSync();
   }
+
+  // ---------- merging (sync and restore) ----------
+  // Each expense carries updatedAt; the newer copy wins. Deletions are kept as tombstones so they spread too.
+  function mergeData(a, b) {
+    const deleted = { ...(a.deleted || {}) };
+    for (const [id, t] of Object.entries(b.deleted || {})) if (!deleted[id] || t > deleted[id]) deleted[id] = t;
+    const byId = new Map();
+    for (const e of [...(a.expenses || []), ...(b.expenses || [])]) {
+      if (!e || !e.id || !e.date) continue;
+      const cur = byId.get(e.id);
+      if (!cur || (e.updatedAt || '') > (cur.updatedAt || '')) byId.set(e.id, e);
+    }
+    const expenses = [...byId.values()].filter((e) => !(deleted[e.id] && deleted[e.id] >= (e.updatedAt || ''))).map(clean).sort((x, y) => (x.id < y.id ? -1 : 1));
+    const sa = a.settings || {}, sb = b.settings || {};
+    const settings = (sb.updatedAt || '') > (sa.updatedAt || '') ? sb : sa;
+    return { expenses, deleted, settings };
+  }
+  const snapshotData = () => ({ expenses: state.expenses, deleted: state.deleted, settings: state.settings });
+  function applyMerged(m) {
+    state.expenses = m.expenses; state.deleted = m.deleted;
+    state.settings = { ...state.settings, ...m.settings, budgets: { ...DEFAULT_BUDGETS, ...(m.settings?.budgets || state.settings.budgets) } };
+    if (state.expenses.length) state.showExamples = false;
+  }
+
+  // ---------- sync through a secret GitHub gist (plain web page only) ----------
+  const SYNC_KEY = 'pocketbook-sync', SYNC_FILE = 'pocketbook-data.json';
+  let syncCfg = (() => { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || null; } catch { return null; } })();
+  const syncState = { busy: false, error: '', timer: null, again: false };
+  function saveSyncCfg() { try { if (syncCfg) localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); else localStorage.removeItem(SYNC_KEY); } catch {} }
+  async function gh(path, opts = {}, token = syncCfg?.token) {
+    let res;
+    try {
+      res = await fetch('https://api.github.com' + path, { ...opts, headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
+    } catch { throw new Error('Couldn\'t reach GitHub. Check your internet connection.'); }
+    if (!res.ok) {
+      throw new Error(res.status === 401 ? 'GitHub didn\'t accept the token. It may have expired or been deleted. Turn sync off and on again with a new token.'
+        : res.status === 403 || res.status === 404 ? 'GitHub refused access. Make sure the token has the "gist" permission, then turn sync off and on again.'
+        : `GitHub returned an error (${res.status}). Try again in a minute.`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+  const syncPayload = (d) => JSON.stringify({ app: 'pocketbook', version: 1, ...d });
+  async function runSync() {
+    if (!syncCfg || state.mode !== 'local') return;
+    if (syncState.busy) { syncState.again = true; return; }
+    syncState.busy = true; syncState.error = ''; renderSync();
+    try {
+      const gist = await gh('/gists/' + syncCfg.gistId);
+      const file = gist.files && gist.files[SYNC_FILE];
+      let remote = {};
+      if (file) {
+        let text = file.content;
+        if (file.truncated) text = await (await fetch(file.raw_url)).text();
+        try { remote = JSON.parse(text || '{}'); } catch { remote = {}; }
+      }
+      const merged = mergeData(snapshotData(), remote);
+      applyMerged(merged);
+      lsSave();
+      const out = syncPayload(merged);
+      if (!file || out !== syncPayload(mergeData(remote, {}))) {
+        await gh('/gists/' + syncCfg.gistId, { method: 'PATCH', body: JSON.stringify({ files: { [SYNC_FILE]: { content: out } } }) });
+      }
+      syncCfg.lastSync = new Date().toISOString(); saveSyncCfg();
+    } catch (e) {
+      syncState.error = e.message || 'Sync didn\'t finish. Try again.';
+    } finally {
+      syncState.busy = false;
+      render();
+      if (syncState.again) { syncState.again = false; runSync(); }
+    }
+  }
+  function scheduleSync() {
+    if (!syncCfg || state.mode !== 'local') return;
+    clearTimeout(syncState.timer);
+    syncState.timer = setTimeout(runSync, 1500);
+  }
+  async function connectSync(token) {
+    syncState.error = '';
+    const list = await gh('/gists?per_page=100', {}, token);
+    let found = (list || []).find((g) => g.files && g.files[SYNC_FILE]);
+    if (!found) {
+      found = await gh('/gists', { method: 'POST', body: JSON.stringify({ description: 'Pocketbook expenses (kept in sync by the Pocketbook app)', public: false, files: { [SYNC_FILE]: { content: syncPayload(mergeData(snapshotData(), {})) } } }) }, token);
+    }
+    syncCfg = { token, gistId: found.id, lastSync: null };
+    saveSyncCfg();
+    await runSync();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') runSync(); });
+
+  function renderSync() {
+    const body = $('#syncBody'), badge = $('#syncBadge');
+    if (!body) return;
+    if (state.mode === 'db') {
+      badge.innerHTML = '<span class="sync-state"><span class="dot-state on"></span>On</span>';
+      body.innerHTML = '<p>This copy of Pocketbook already syncs through your Claude account. Open the same link on any device where you\'re signed in to Claude and your expenses are there.</p>';
+      return;
+    }
+    if (!syncCfg) {
+      const typed = $('#tokenInput')?.value || '';
+      badge.innerHTML = '<span class="sync-state"><span class="dot-state"></span>Off</span>';
+      body.innerHTML = `
+        <p>Right now your expenses are saved only in this browser. Turn on sync to keep them in a private file on your GitHub account, so the same data shows up on every phone and computer where you turn sync on.</p>
+        <ol>
+          <li>Open <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Pocketbook%20sync" target="_blank" rel="noopener">GitHub's new token page</a>. Sign in if asked.</li>
+          <li>Leave only <b>gist</b> ticked. Set <b>Expiration</b> to <b>No expiration</b>, or to a date you'll remember to renew.</li>
+          <li>Tap <b>Generate token</b>, copy the token (it starts with <code>ghp_</code>) and paste it below.</li>
+          <li>Paste the same token on your other devices. They'll all share one copy of your data.</li>
+        </ol>
+        <label for="tokenInput">GitHub token<input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…"></label>
+        <div class="dlg-actions"><button class="btn" type="button" id="connectBtn">Turn on sync</button></div>
+        <p class="error" role="alert">${esc(syncState.error)}</p>
+        <p class="hint">The token is saved only in this browser and can only read and write your gists. Your expenses go into a secret gist: it isn't listed or searchable, but anyone who has its exact link can read it.</p>`;
+      $('#tokenInput').value = typed;
+      $('#connectBtn').onclick = async () => {
+        const token = $('#tokenInput').value.trim();
+        if (!token) { syncState.error = 'Paste your GitHub token first.'; renderSync(); return; }
+        const btn = $('#connectBtn'); btn.disabled = true; btn.textContent = 'Connecting…';
+        try { await connectSync(token); } catch (e) { syncCfg = null; saveSyncCfg(); syncState.error = e.message; render(); }
+      };
+      return;
+    }
+    const last = syncCfg.lastSync ? new Date(syncCfg.lastSync) : null;
+    const when = !last ? 'Not synced yet' : (Date.now() - last < 60000 ? 'Last synced just now' : `Last synced ${last.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`);
+    const cls = syncState.busy ? 'busy' : syncState.error ? 'err' : 'on';
+    badge.innerHTML = `<span class="sync-state"><span class="dot-state ${cls}"></span>${syncState.busy ? 'Syncing…' : syncState.error ? 'Needs attention' : 'On'}</span>`;
+    body.innerHTML = `
+      <p>Sync is on. Changes on this device are sent to your GitHub account a moment after you make them, and changes from your other devices arrive whenever you open the app.</p>
+      <p class="muted">${esc(when)}</p>
+      ${syncState.error ? `<p class="error" role="alert">${esc(syncState.error)}</p>` : ''}
+      <div class="dlg-actions">
+        <button class="btn" type="button" id="syncNow" ${syncState.busy ? 'disabled' : ''}>Sync now</button>
+        <button class="btn quiet" type="button" id="syncOff">Turn off on this device</button>
+      </div>
+      <p class="hint">Turning sync off keeps your expenses on this device and on GitHub. To use it on another device, open Pocketbook there, go to Sync and paste the same token.</p>`;
+    $('#syncNow').onclick = () => runSync();
+    $('#syncOff').onclick = () => { syncCfg = null; saveSyncCfg(); syncState.error = ''; render(); };
+  }
+
+  // ---------- backup file ----------
+  $('#backupBtn').addEventListener('click', async () => {
+    const status = $('#backupStatus');
+    if (!downloads) { status.textContent = 'Downloads aren\'t available here.'; return; }
+    const data = JSON.stringify({ app: 'pocketbook', version: 1, exportedAt: new Date().toISOString(), ...snapshotData() }, null, 1);
+    try { await downloads.save({ filename: `pocketbook-backup-${todayISO()}.json`, data }); status.textContent = `Backup of ${state.expenses.length} expenses saved.`; }
+    catch (e) { status.textContent = e?.code === 'declined' ? '' : 'The backup couldn\'t be saved.'; }
+  });
+  $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());
+  $('#restoreFile').addEventListener('change', async (ev) => {
+    const status = $('#backupStatus');
+    const file = ev.target.files && ev.target.files[0]; ev.target.value = '';
+    if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { status.textContent = 'That file isn\'t a Pocketbook backup.'; return; }
+    if (!data || !Array.isArray(data.expenses)) { status.textContent = 'That file isn\'t a Pocketbook backup.'; return; }
+    const before = new Map(state.expenses.map((e) => [e.id, e.updatedAt || '']));
+    const merged = mergeData(snapshotData(), data);
+    const changed = merged.expenses.filter((e) => !before.has(e.id) || (e.updatedAt || '') > before.get(e.id));
+    try {
+      if (state.mode === 'db') {
+        status.textContent = 'Restoring…';
+        for (const e of changed) await db.collection('expenses').doc(e.id).set(e);
+        if (merged.settings !== state.settings && merged.settings?.budgets) await db.doc('config/settings').set(merged.settings);
+      }
+      applyMerged(merged);
+      if (state.mode === 'local') { lsSave(); scheduleSync(); }
+      status.textContent = changed.length ? `Restored ${changed.length} expense${changed.length === 1 ? '' : 's'}.` : 'Everything in that backup is already here.';
+      render();
+    } catch (e) { status.textContent = saveError(e); }
+  });
 
   async function boot() {
     examples = makeExamples();
-    state.tab = ['overview', 'ledger', 'budgets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+    state.tab = ['overview', 'ledger', 'budgets', 'sync'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
     render();
     const api = window.claude;
     if (!api?.use) {
       // Opened as a plain web page: save exports with a normal browser download.
       downloads = { save: async ({ filename, data }) => {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([data], { type: 'text/csv' }));
+        a.href = URL.createObjectURL(new Blob([data], { type: filename.endsWith('.json') ? 'application/json' : 'text/csv' }));
         a.download = filename; document.body.append(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       } };
@@ -879,7 +1090,7 @@ dialog::backdrop { background: rgba(10, 14, 12, .45); }
   // ---------- nav ----------
   $('#prevMonth').addEventListener('click', () => { state.month = shiftMonth(state.month, -1); render(); });
   $('#nextMonth').addEventListener('click', () => { if (state.month < monthOf(todayISO())) { state.month = shiftMonth(state.month, 1); render(); } });
-  window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (['overview', 'ledger', 'budgets'].includes(t)) { state.tab = t; render(); } });
+  window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (['overview', 'ledger', 'budgets', 'sync'].includes(t)) { state.tab = t; render(); } });
   $('#search').addEventListener('input', () => renderLedger());
   $('#onlyUnusual').addEventListener('change', () => renderLedger());
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (state.tab === 'overview' && state.loaded) renderTrend(all()); }, 150); });
